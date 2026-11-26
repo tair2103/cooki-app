@@ -11,7 +11,7 @@ import type { Recipe } from "@/lib/types";
 import { haveIngredient, pantryTokens } from "@/lib/pantryCheck";
 import { useBasics } from "@/lib/useBasics";
 import { authedFetch } from "@/lib/apiFetch";
-import { MAX_VIDEO_BYTES, VIDEO_TYPES, parseYoutubeUrl } from "@/lib/recipeImport";
+import { parseYoutubeUrl } from "@/lib/recipeImport";
 import RecipeEditor from "@/components/RecipeEditor";
 
 type Source = "url" | "text" | "video";
@@ -44,13 +44,11 @@ export default function ImportRecipe() {
   const [source, setSource] = useState<Source>("url");
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
-  // לשונית סרטון: קובץ או קישור ליוטיוב, תיאור אופציונלי, וקישור מקור (לשמירה בלבד)
-  const [file, setFile] = useState<File | null>(null);
+  // לשונית סרטון: קישור ליוטיוב ו/או תיאור, וקישור מקור (לשמירה בלבד). העלאת קובץ סרטון קיימת בענף video-upload
   const [youtube, setYoutube] = useState("");
   const [description, setDescription] = useState("");
   const [originalLink, setOriginalLink] = useState("");
   const [hint, setHint] = useState("");
-  const [dragOver, setDragOver] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -90,7 +88,7 @@ export default function ImportRecipe() {
         setSource("video");
         setOriginalLink(qUrl);
         if (qText) setDescription(qText);
-        setHint("קיבלתי קישור לסרטון. את הסרטון עצמו אי אפשר לקרוא מהקישור: אפשר להעלות אותו כקובץ, ולהדביק בתיאור את הכיתוב שלו.");
+        setHint("קיבלתי קישור לסרטון. את הסרטון עצמו אי אפשר לקרוא מהקישור, אבל אפשר להדביק בתיאור את הכיתוב שלו.");
       } else if (isHttpUrl(qUrl)) {
         setSource("url");
         setUrl(qUrl);
@@ -103,25 +101,7 @@ export default function ImportRecipe() {
 
   const canImport =
     !isLoading &&
-    (source === "url" ? url.trim().length > 0 : source === "text" ? text.trim().length > 0 : !!file || youtube.trim().length > 0);
-
-  function onPickFile(f: File | null) {
-    setError("");
-    if (!f) {
-      setFile(null);
-      return;
-    }
-    if (!VIDEO_TYPES.includes(f.type)) {
-      setError("סוג הקובץ לא נתמך. אפשר להעלות mp4, mov או webm.");
-      return;
-    }
-    if (f.size > MAX_VIDEO_BYTES) {
-      setError(`הסרטון גדול מדי (${(f.size / 1048576).toFixed(0)}MB). המגבלה היא ${MAX_VIDEO_BYTES / 1048576}MB.`);
-      return;
-    }
-    setFile(f);
-    setYoutube("");
-  }
+    (source === "url" ? url.trim().length > 0 : source === "text" ? text.trim().length > 0 : youtube.trim().length > 0 || description.trim().length > 0);
 
   async function runImport() {
     setError("");
@@ -132,11 +112,11 @@ export default function ImportRecipe() {
       setSource("video");
       setOriginalLink(url.trim());
       setUrl("");
-      setHint("את הסרטון עצמו אי אפשר לקרוא מקישור של טיקטוק, אינסטגרם או פייסבוק. אפשר להעלות אותו כקובץ ולהדביק את הכיתוב שלו בתיאור.");
+      setHint("את הסרטון עצמו אי אפשר לקרוא מקישור של טיקטוק, אינסטגרם או פייסבוק. אפשר להדביק את הכיתוב שלו בתיאור.");
       return;
     }
-    if (source === "video" && !file && youtube.trim() && !parseYoutubeUrl(youtube)) {
-      setError("זה לא נראה כמו קישור לסרטון ביוטיוב. לסרטונים מרשתות אחרות צריך להעלות קובץ.");
+    if (source === "video" && youtube.trim() && !parseYoutubeUrl(youtube)) {
+      setError("זה לא נראה כמו קישור לסרטון ביוטיוב. לסרטונים מרשתות אחרות אפשר להדביק את הכיתוב בתיאור.");
       return;
     }
 
@@ -146,18 +126,19 @@ export default function ImportRecipe() {
     setHint("");
     try {
       let init: RequestInit;
-      if (source === "video") {
-        // קובץ דורש FormData (לא JSON). את ה-Content-Type הדפדפן קובע לבד.
+      if (source === "video" && youtube.trim()) {
+        // קישור ליוטיוב (ותיאור אופציונלי). את ה-Content-Type הדפדפן קובע לבד.
         const form = new FormData();
-        if (file) form.append("file", file);
-        else form.append("youtube", youtube.trim());
+        form.append("youtube", youtube.trim());
         if (description.trim()) form.append("text", description.trim());
         init = { method: "POST", body: form, signal: AbortSignal.timeout(210000) };
       } else {
+        // קישור לדף, טקסט, או סרטון בלי קישור יוטיוב (אז התיאור הוא הטקסט)
+        const payload = source === "url" ? { url: url.trim() } : { text: (source === "video" ? description : text).trim() };
         init = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(source === "url" ? { url: url.trim() } : { text: text.trim() }),
+          body: JSON.stringify(payload),
           signal: AbortSignal.timeout(90000), // כמה מודלים ברצף יכולים לקחת זמן
         };
       }
@@ -221,7 +202,6 @@ export default function ImportRecipe() {
     setNotes([]);
     setUrl("");
     setText("");
-    setFile(null);
     setYoutube("");
     setDescription("");
     setOriginalLink("");
@@ -270,71 +250,16 @@ export default function ImportRecipe() {
 
       {source === "video" && (
         <div>
-          {/* אזור בחירת קובץ: כל המסגרת לחיצה, ואפשר גם לגרור לתוכה קובץ */}
-          <label
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              onPickFile(e.dataTransfer.files?.[0] ?? null);
-            }}
-            style={{
-              position: "relative",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "0.3rem",
-              padding: "1.1rem",
-              border: "2px dashed " + (dragOver || file ? "#6366f1" : "#9ca3af"),
-              borderRadius: "10px",
-              backgroundColor: dragOver ? "#eef2ff" : file ? "#f5f7ff" : "#f9fafb",
-              cursor: "pointer",
-              textAlign: "center",
-            }}
-          >
-            {/* השדה עצמו מוסתר ויזואלית אבל נשאר נגיש למקלדת וקוראי מסך */}
-            <input
-              type="file"
-              accept="video/*"
-              onChange={(e) => {
-                onPickFile(e.target.files?.[0] ?? null);
-                e.target.value = ""; // כך אפשר לבחור שוב את אותו קובץ אחרי שהוסר
-              }}
-              aria-label="בחירת קובץ סרטון"
-              style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
-            />
-            <span style={{ fontSize: "1.6rem" }}>{file ? "🎞️" : "📁"}</span>
-            <span style={{ padding: "0.4rem 1.1rem", backgroundColor: "#6366f1", color: "white", borderRadius: "6px", fontWeight: "bold" }}>
-              {file ? "החלפת סרטון" : "בחירת קובץ סרטון"}
-            </span>
-            <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-              {file ? `${file.name} (${(file.size / 1048576).toFixed(1)}MB)` : `או לגרור לכאן (mp4, mov, webm, עד ${MAX_VIDEO_BYTES / 1048576}MB)`}
-            </span>
-          </label>
-          {file && (
-            <button onClick={() => setFile(null)} style={{ marginTop: "0.3rem", border: "none", background: "none", color: "#ef4444", cursor: "pointer" }}>
-              הסר את הקובץ
-            </button>
-          )}
-
-          <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>או קישור לסרטון ביוטיוב</label>
+          <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>קישור לסרטון ביוטיוב</label>
           <input
             type="url"
             value={youtube}
             maxLength={2000}
-            onChange={(e) => {
-              setYoutube(e.target.value);
-              if (e.target.value) setFile(null);
-            }}
-            disabled={!!file}
+            onChange={(e) => setYoutube(e.target.value)}
             placeholder="https://www.youtube.com/watch?v=..."
             dir="ltr"
             aria-label="קישור ליוטיוב"
-            style={{ ...fieldStyle, backgroundColor: file ? "#f3f4f6" : "white" }}
+            style={fieldStyle}
           />
 
           <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>
@@ -355,7 +280,7 @@ export default function ImportRecipe() {
           </label>
           <input type="url" value={originalLink} onChange={(e) => setOriginalLink(e.target.value)} maxLength={2000} placeholder="https://www.tiktok.com/..." dir="ltr" aria-label="קישור למקור" style={fieldStyle} />
           <p style={{ margin: "0.6rem 0 0", fontSize: "0.82rem", color: "#6b7280" }}>
-            הסרטון נשלח ל-Google לעיבוד ונמחק משם מיד אחרי הניתוח. כדאי לוודא בתנאי השימוש של ה-API שהם מתאימים לסרטון שאת מעלה.
+            הקישור לסרטון נשלח ל-Google לצורך הניתוח. כדאי לוודא בתנאי השימוש של ה-API שהם מתאימים לסרטון.
           </p>
         </div>
       )}
