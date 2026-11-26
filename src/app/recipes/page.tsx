@@ -2,7 +2,7 @@
 // ספר המתכונים: חיפוש תוך כדי הקלדה, תיקיות, וגרירת מתכון לתיקייה.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import CopyToSpace from "@/components/CopyToSpace";
@@ -40,6 +40,10 @@ export default function RecipeBook() {
   const { basics, loaded: basicsLoaded } = useBasics();
   // הודעת "הוסף חסרים" לכל מתכון
   const [shopMsgs, setShopMsgs] = useState<Record<string, string>>({});
+  // Recipes whose "add missing to shopping list" is running. The ref blocks a second click instantly
+  // (state updates after render), the state only drives the button label.
+  const addingRef = useRef<Set<string>>(new Set());
+  const [adding, setAdding] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<FolderFilter>("all");
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -86,7 +90,17 @@ export default function RecipeBook() {
 
   // מצרך שחסר חלקית נכנס לרשימה רק בכמות החסרה (toShoppingRecipe)
   async function addMissing(recipe: SavedRecipe, assessed: Assessment[]) {
-    const result = await addMissingToShopping(toShoppingRecipe(recipe, assessed));
+    if (addingRef.current.has(recipe.id)) return; // already running: ignore extra clicks
+    addingRef.current.add(recipe.id);
+    setAdding((prev) => ({ ...prev, [recipe.id]: true }));
+    setShopMsgs((prev) => ({ ...prev, [recipe.id]: "" }));
+    let result;
+    try {
+      result = await addMissingToShopping(toShoppingRecipe(recipe, assessed));
+    } finally {
+      addingRef.current.delete(recipe.id);
+      setAdding((prev) => ({ ...prev, [recipe.id]: false }));
+    }
     let msg: string;
     if (result.error) msg = result.error;
     else if (result.added === 0 && result.merged === 0 && result.skipped > 0) msg = "כל המצרכים החסרים כבר ברשימה עבור המתכון הזה ✓";
@@ -456,9 +470,10 @@ export default function RecipeBook() {
                   {assessed && missingCount > 0 && (
                     <button
                       onClick={() => addMissing(recipe, assessed)}
-                      style={{ backgroundColor: "#f59e0b", color: "white", border: "none", padding: "0.4rem 0.9rem", borderRadius: "4px", cursor: "pointer" }}
+                      disabled={!!adding[recipe.id]}
+                      style={{ backgroundColor: "#f59e0b", color: "white", border: "none", padding: "0.4rem 0.9rem", borderRadius: "4px", cursor: adding[recipe.id] ? "wait" : "pointer", opacity: adding[recipe.id] ? 0.6 : 1 }}
                     >
-                      🛒 הוסף חסרים לרשימת קניות
+                      {adding[recipe.id] ? "מוסיף..." : "🛒 הוסף חסרים לרשימת קניות"}
                     </button>
                   )}
                   <CopyToSpace label="העתקת מתכון אל..." onCopy={(d) => copyRecipe(recipe as unknown as Record<string, unknown>, d)} />

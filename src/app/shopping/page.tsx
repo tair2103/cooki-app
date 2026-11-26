@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { noteDbError, takeDbMessage } from "@/lib/dbErrors";
-import { inScope, withSpace } from "@/lib/spaceScope";
+import { currentSpaceId, inScope, withSpace } from "@/lib/spaceScope";
 import { CATEGORY_NAMES, DEFAULT_ORDER, OTHER, getEmoji } from "@/lib/categories";
 import { categorizeMany } from "@/lib/categorizeItems";
 import BulkAdd, { type BulkRow } from "@/components/BulkAdd";
@@ -116,6 +116,34 @@ export default function ShoppingList() {
     setName("");
     setAmount("");
     setErrorMsg("");
+  }
+
+  // Check or uncheck a whole category at once
+  async function setCategoryChecked(ids: string[], checked: boolean) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("shopping_items").update({ is_checked: checked }).in("id", ids);
+    if (error) {
+      console.error("shopping category check error:", error);
+      setErrorMsg("העדכון נכשל.");
+      return;
+    }
+    setErrorMsg("");
+    fetchItems();
+  }
+
+  // Delete the whole list of the current scope (personal list, or the shared space list)
+  async function deleteAllItems() {
+    const where = currentSpaceId() ? "המשותפת של המרחב (לכל החברים)" : "האישית שלך";
+    if (!window.confirm(`למחוק את כל הרשימה ${where}, ${items.length} פריטים, כולל פריטים שסומנו? אי אפשר לבטל.`)) return;
+    const { error } = await inScope(supabase.from("shopping_items").delete());
+    if (error) {
+      console.error("shopping delete all error:", error);
+      setErrorMsg("המחיקה נכשלה.");
+      return;
+    }
+    setErrorMsg("");
+    setInfoMsg("הרשימה נמחקה ✓");
+    fetchItems();
   }
 
   function startEdit(item: ShoppingItem) {
@@ -277,12 +305,29 @@ export default function ShoppingList() {
             <p style={{ color: "#6b7280" }}>הרשימה ריקה. אפשר להוסיף מצרך למעלה, או ללחוץ על "הוסף חסרים לרשימת קניות" בכרטיס מתכון.</p>
           )}
 
+          {!isLoading && items.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.5rem" }}>
+              <button
+                onClick={deleteAllItems}
+                style={{ padding: "0.3rem 0.8rem", border: "1px solid #fca5a5", backgroundColor: "white", color: "#b91c1c", borderRadius: "6px", cursor: "pointer", fontSize: "0.85rem" }}
+              >
+                מחק את כל הרשימה
+              </button>
+            </div>
+          )}
+
           {visibleGroups.map((g, vi) => (
               <section key={g.cat} style={{ marginBottom: "1.5rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", borderBottom: "2px solid #e5e7eb", paddingBottom: "0.25rem" }}>
                   <h2 style={{ flex: 1, margin: 0, fontSize: "1.1rem", fontWeight: "bold" }}>
                     {getEmoji(g.cat)} {g.cat}
                   </h2>
+                  <button
+                    onClick={() => setCategoryChecked(g.list.map((i) => i.id), !g.list.every((i) => i.is_checked))}
+                    style={{ padding: "0.2rem 0.6rem", border: "1px solid #d1d5db", backgroundColor: "white", color: "#374151", borderRadius: "6px", cursor: "pointer", fontSize: "0.85rem" }}
+                  >
+                    {g.list.every((i) => i.is_checked) ? "בטל סימון" : "סמן הכל"}
+                  </button>
                   {/* שינוי סדר הקטגוריות ישירות בתצוגה */}
                   <button onClick={() => moveCategory(g.cat, -1)} disabled={vi === 0} aria-label={`הזז את ${g.cat} למעלה`} style={arrowStyle(vi === 0)}>
                     ▲
