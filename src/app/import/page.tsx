@@ -44,10 +44,9 @@ export default function ImportRecipe() {
   const [source, setSource] = useState<Source>("url");
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
-  // לשונית סרטון: קישור ליוטיוב ו/או תיאור, וקישור מקור (לשמירה בלבד). העלאת קובץ סרטון קיימת בענף video-upload
+  // לשונית סרטון: שדה קישור אחד (יוטיוב מנותח ונשמר כמקור, קישור אחר רק נשמר כמקור) ותיאור. העלאת קובץ סרטון קיימת בענף video-upload
   const [youtube, setYoutube] = useState("");
   const [description, setDescription] = useState("");
-  const [originalLink, setOriginalLink] = useState("");
   const [hint, setHint] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -86,7 +85,7 @@ export default function ImportRecipe() {
         if (qText) setDescription(qText);
       } else if (isSocialLink(qUrl)) {
         setSource("video");
-        setOriginalLink(qUrl);
+        setYoutube(qUrl);
         if (qText) setDescription(qText);
         setHint("קיבלתי קישור לסרטון. את הסרטון עצמו אי אפשר לקרוא מהקישור, אבל אפשר להדביק בתיאור את הכיתוב שלו.");
       } else if (isHttpUrl(qUrl)) {
@@ -102,6 +101,7 @@ export default function ImportRecipe() {
   const canImport =
     !isLoading &&
     (source === "url" ? url.trim().length > 0 : source === "text" ? text.trim().length > 0 : youtube.trim().length > 0 || description.trim().length > 0);
+  const isYoutube = !!parseYoutubeUrl(youtube);
 
   async function runImport() {
     setError("");
@@ -110,14 +110,20 @@ export default function ImportRecipe() {
     // קישור לרשת חברתית בלשונית הקישור: מפנים ללשונית הסרטון במקום לנסות לקרוא דף שאי אפשר לקרוא
     if (source === "url" && isSocialLink(url)) {
       setSource("video");
-      setOriginalLink(url.trim());
+      setYoutube(url.trim());
       setUrl("");
       setHint("את הסרטון עצמו אי אפשר לקרוא מקישור של טיקטוק, אינסטגרם או פייסבוק. אפשר להדביק את הכיתוב שלו בתיאור.");
       return;
     }
-    if (source === "video" && youtube.trim() && !parseYoutubeUrl(youtube)) {
-      setError("זה לא נראה כמו קישור לסרטון ביוטיוב. לסרטונים מרשתות אחרות אפשר להדביק את הכיתוב בתיאור.");
-      return;
+    if (source === "video" && youtube.trim() && !isYoutube) {
+      if (!isHttpUrl(youtube.trim())) {
+        setError("זה לא נראה כמו קישור. אפשר להדביק קישור מלא שמתחיל ב-https.");
+        return;
+      }
+      if (!description.trim()) {
+        setError("את הסרטון עצמו אפשר לנתח רק מיוטיוב. לסרטון מרשת אחרת, הדביקי את הכיתוב או התיאור שלו בשדה התיאור, והקישור יישמר כמקור.");
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -126,7 +132,7 @@ export default function ImportRecipe() {
     setHint("");
     try {
       let init: RequestInit;
-      if (source === "video" && youtube.trim()) {
+      if (source === "video" && isYoutube) {
         // קישור ליוטיוב (ותיאור אופציונלי). את ה-Content-Type הדפדפן קובע לבד.
         const form = new FormData();
         form.append("youtube", youtube.trim());
@@ -150,7 +156,7 @@ export default function ImportRecipe() {
         setDraft(data.recipe as Recipe);
         setNotes(Array.isArray(data.notes) ? data.notes : []);
         // קישור מקור: מה שהמשתמשת הזינה (אם זה http/https), אחרת מה שהשרת זיהה
-        setSourceUrl(source === "video" && originalLink.trim() && isHttpUrl(originalLink) ? originalLink.trim() : data.source ?? null);
+        setSourceUrl(source === "video" && youtube.trim() && isHttpUrl(youtube.trim()) ? youtube.trim() : data.source ?? null);
         setMethod(data.method ?? "");
       } else {
         setError(data.error || "התקבלה תשובה ריקה מהשרת.");
@@ -204,7 +210,6 @@ export default function ImportRecipe() {
     setText("");
     setYoutube("");
     setDescription("");
-    setOriginalLink("");
   }
 
   const tab = (value: Source, label: string) => (
@@ -250,15 +255,15 @@ export default function ImportRecipe() {
 
       {source === "video" && (
         <div>
-          <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>קישור לסרטון ביוטיוב</label>
+          <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>קישור לסרטון (יוטיוב מנותח, קישור מרשת אחרת נשמר כמקור)</label>
           <input
             type="url"
             value={youtube}
             maxLength={2000}
             onChange={(e) => setYoutube(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
+            placeholder="https://www.youtube.com/watch?v=... או https://www.tiktok.com/..."
             dir="ltr"
-            aria-label="קישור ליוטיוב"
+            aria-label="קישור לסרטון"
             style={fieldStyle}
           />
 
@@ -275,12 +280,8 @@ export default function ImportRecipe() {
             style={fieldStyle}
           />
 
-          <label style={{ display: "block", fontSize: "0.92rem", margin: "0.9rem 0 0.25rem" }}>
-            קישור לסרטון המקורי (אופציונלי, נשמר רק כדי שתוכלי לחזור אליו)
-          </label>
-          <input type="url" value={originalLink} onChange={(e) => setOriginalLink(e.target.value)} maxLength={2000} placeholder="https://www.tiktok.com/..." dir="ltr" aria-label="קישור למקור" style={fieldStyle} />
           <p style={{ margin: "0.6rem 0 0", fontSize: "0.82rem", color: "#6b7280" }}>
-            הקישור לסרטון נשלח ל-Google לצורך הניתוח. כדאי לוודא בתנאי השימוש של ה-API שהם מתאימים לסרטון.
+            קישור יוטיוב נשלח ל-Google לצורך הניתוח. כדאי לוודא בתנאי השימוש של ה-API שהם מתאימים לסרטון.
           </p>
         </div>
       )}
