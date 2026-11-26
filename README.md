@@ -3,8 +3,6 @@
 A pantry, recipe and shopping-list app with AI features. The interface is in Hebrew (right-to-left).
 Built as a portfolio project (not a commercial product).
 
-Live demo: https://cooki-app-mu.vercel.app (registration is invite-only)
-
 ## What it does
 
 - **Pantry**: track what you have at home, by category and location, with quantities.
