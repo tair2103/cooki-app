@@ -86,6 +86,26 @@ export function SpacesProvider({ userId, children }: { userId: string; children:
     refresh();
   }, [refresh]);
 
+  // Keep invites and spaces fresh without a manual page reload: refresh when the tab becomes
+  // visible again and once a minute while it is visible (throttled to at most once per 15 seconds)
+  useEffect(() => {
+    let last = Date.now();
+    const maybeRefresh = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - last < 15000) return;
+      last = Date.now();
+      refresh();
+    };
+    const timer = setInterval(maybeRefresh, 60000);
+    document.addEventListener("visibilitychange", maybeRefresh);
+    window.addEventListener("focus", maybeRefresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", maybeRefresh);
+      window.removeEventListener("focus", maybeRefresh);
+    };
+  }, [refresh]);
+
   const setActive = useCallback(
     (id: string | null) => {
       const value = id ?? PERSONAL;
