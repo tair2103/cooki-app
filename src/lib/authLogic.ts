@@ -2,7 +2,7 @@
 // בלי Supabase ובלי React, כדי שאפשר יהיה לבדוק אותה בנפרד.
 
 // בכל שינוי מהותי בתנאים או במדיניות: מעדכנים את הערך, וכל המשתמשות יתבקשו לאשר מחדש.
-export const TERMS_VERSION = "2026-11-20";
+export const TERMS_VERSION = "2026-11-26";
 export const MIN_PASSWORD = 8;
 // התחברות עם Google. להפעיל (true) רק אחרי שהגדרת את Google ב-Supabase (Authentication ← Providers).
 export const GOOGLE_LOGIN_ENABLED = false;
